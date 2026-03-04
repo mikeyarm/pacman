@@ -144,3 +144,83 @@ function update() {
     draw();
     setTimeout(update, 50);
 }
+
+function draw() {
+    context.clearRect(0, 0, board.width, board.height);
+    context.drawImage(pacman.image, pacman.x, pacman.y, pacman.width, pacman.height);
+    for (let ghost of ghosts.values()) {
+        context.drawImage(ghost.image, ghost.x, ghost.y, ghost.width, ghost.height);
+    }
+
+    for (let wall of walls.values()) {
+        context.drawImage(wall.image, wall.x, wall.y, wall.width, wall.height);
+    }
+
+    context.fillStyle = "white";
+    for (let food of foods.values()) {
+        context.fillRect(food.x, food.y, food.width, food.height);
+    }
+
+    context.fillStyle = "white";
+    context.font = "14px sans-serif";
+    if (gameOver) {
+        context.fillText("Game Over: " + String(score), tileSize/2, tileSize/2);
+    }
+    else {
+        context.fillText("x" + String(lives) + " " + String(score), tileSize/2, tileSize/2);
+    }
+}
+
+function move() {
+    pacman.x += pacman.velocityX;
+    pacman.y += pacman.velocityY;
+
+    for (let wall of walls.values()) {
+        if (collision(pacman, wall)) {
+            pacman.x -= pacman.velocityX;
+            pacman.y -= pacman.velocityY;
+            break;
+        }
+    }
+
+    for (let ghost of ghosts.values()) {
+        if (collision(ghost, pacman)) {
+            lives -= 1;
+            if (lives == 0) {
+                gameOver = true;
+                return;
+            }
+            resetPositions();
+        }
+
+        if (ghost.y == tileSize*9 && ghost.direction != 'U' && ghost.direction != 'D') {
+            ghost.updateDirection('U');
+        }
+
+        ghost.x += ghost.velocityX;
+        ghost.y += ghost.velocityY;
+        for (let wall of walls.values()) {
+            if (collision(ghost, wall) || ghost.x <= 0 || ghost.x + ghost.width >= boardWidth) {
+                ghost.x -= ghost.velocityX;
+                ghost.y -= ghost.velocityY;
+                const newDirection = directions[Math.floor(Math.random()*4)];
+                ghost.updateDirection(newDirection);
+            }
+        }
+    }
+
+    let foodEaten = null;
+    for (let food of foods.values()) {
+        if (collision(pacman, food)) {
+            foodEaten = food;
+            score += 10;
+            break;
+        }
+    }
+    foods.delete(foodEaten);
+
+    if (foods.size == 0) {
+        loadMap();
+        resetPositions();
+    }
+}

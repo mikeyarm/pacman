@@ -1,8 +1,25 @@
 body {
-    text-align: center;
+    background-color: #101010; /* Darker background */
+    margin: 0;
+    display: flex;
+    justify-content: center; /* Centers horizontally */
+    align-items: center;     /* Centers vertically */
+    height: 100vh;           /* Full height of the browser window */
     overflow: hidden;
 }
 
 #board {
     background-color: black;
+    border: 5px solid #1919A6; /* Classic Pac-Man Blue Border */
+    box-shadow: 0 0 30px rgba(0, 0, 0, 1);
+    
+    /* Responsive sizing */
+    max-width: 95vw;
+    max-height: 90vh;
+    width: auto;
+    height: auto;
+
+    /* Keeps pixel art sharp when stretched */
+    image-rendering: -moz-crisp-edges;
+    image-rendering: pixelated;
 }

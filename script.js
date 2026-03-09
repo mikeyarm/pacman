@@ -5,10 +5,19 @@ const columnCount = 19;
 const boardWidth = columnCount * tileSize;
 const boardHeight = rowCount * tileSize;
 let context;
+let requestID;
+
+// --- Camera and Shake State ---
+let camera = { x: 0, y: 0 };
+const lerpSpeed = 0.08; // How smooth the camera follows
+let shakeIntensity = 0;
+let shakeTimer = 0;
 
 let highScore = localStorage.getItem("pacman-high-score") || 0;
 let ghostScared = false;
 let ghostScaredTimer = 0;
+let level = 1;
+let levelFlashTimer = 0;
 
 let blueGhostImage, orangeGhostImage, pinkGhostImage, redGhostImage, scaredGhostImage;
 let pacmanUpImage, pacmanDownImage, pacmanLeftImage, pacmanRightImage;
@@ -24,11 +33,11 @@ const tileMap = [
     "XXXX XXXX XXXX XXXX",
     "OOOX X       X XOOO",
     "XXXX X XXrXX X XXXX",
-    "O       bpo       O",
+    "O      bpo      O",
     "XXXX X XXXXX X XXXX",
     "OOOX X       X XOOO",
     "XXXX X XXXXX X XXXX",
-    "X                   X",
+    "X                 X",
     "X XX XXX X XXX XX X",
     "X  X     P     X  X",
     "XX X X XXXXX X X XX",
@@ -55,11 +64,24 @@ window.onload = function() {
     board.width = boardWidth;
     context = board.getContext("2d");
     loadImages();
-    loadMap();
-    for (let ghost of ghosts) ghost.updateDirection(directions[Math.floor(Math.random() * 4)]);
-    update();
-    document.addEventListener("keyup", movePacman);
+    restartGame();
+    document.addEventListener("keydown", handleInput);
 };
+
+// --- Camera Smoothing Logic ---
+
+function updateCamera() {
+    let targetX = -pacman.x + board.width / 2 - 50;
+    let targetY = -pacman.y + board.height / 2 - 50;
+    
+    // Linear Interpolation (LERP)
+    camera.x += (targetX - camera.x) * lerpSpeed;
+    camera.y += (targetY - camera.y) * lerpSpeed;
+    
+    // Clamp to map boundaries
+    camera.x = Math.min(0, Math.max(camera.x, board.width - boardWidth));
+    camera.y = Math.min(0, Math.max(camera.y, board.height - boardHeight));
+}
 
 function loadImages() {
     wallImage = new Image(); wallImage.src = "img/wall.png";
@@ -67,11 +89,29 @@ function loadImages() {
     orangeGhostImage = new Image(); orangeGhostImage.src = "img/orangeGhost.png";
     pinkGhostImage = new Image(); pinkGhostImage.src = "img/pinkGhost.png";
     redGhostImage = new Image(); redGhostImage.src = "img/redGhost.png";
-    scaredGhostImage = new Image(); scaredGhostImage.src = "img/scaredghost1.png";
+    scaredGhostImage = new Image(); scaredGhostImage.src = "img/scaredghostleft.png";
     pacmanUpImage = new Image(); pacmanUpImage.src = "img/pacmanUp.png";
     pacmanDownImage = new Image(); pacmanDownImage.src = "img/pacmanDown.png";
     pacmanLeftImage = new Image(); pacmanLeftImage.src = "img/pacmanLeft.png";
     pacmanRightImage = new Image(); pacmanRightImage.src = "img/pacmanRight.png";
+}
+
+function restartGame() {
+    level = 1;
+    score = 0;
+    lives = 3;
+    nextLevel();
+}
+
+function nextLevel() {
+    cancelAnimationFrame(requestID);
+    gameOver = false;
+    ghostScared = false;
+    ghostScaredTimer = 0;
+    levelFlashTimer = 100; 
+    loadMap();
+    resetPositions();
+    requestID = requestAnimationFrame(update);
 }
 
 function loadMap() {
@@ -107,90 +147,214 @@ function update() {
     if (gameOver) return;
     move();
     draw();
-    setTimeout(update, 30);
+    if (levelFlashTimer > 0) levelFlashTimer--;
+    requestID = requestAnimationFrame(update);
 }
 
 function draw() {
     context.clearRect(0, 0, board.width, board.height);
-    for (let w of walls) context.drawImage(w.image, w.x, w.y, w.width, w.height);
-    context.fillStyle = "white";
-    for (let f of foods) context.fillRect(f.x, f.y, f.width, f.height);
-    for (let p of powerPellets) { context.beginPath(); context.arc(p.x + 20, p.y + 20, 20, 0, Math.PI * 2); context.fill(); }
+    updateCamera();
 
-    for (let g of ghosts) {
-        let img = (ghostScared && (ghostScaredTimer > 50 || Math.floor(Date.now() / 100) % 2 === 0)) ? scaredGhostImage : g.image;
-        context.drawImage(img, g.x, g.y, g.width, g.height);
+    context.save();
+    context.translate(camera.x, camera.y);
+
+    // Apply Screen Shake
+    if (shakeTimer > 0) {
+        context.translate((Math.random() - 0.5) * shakeIntensity, (Math.random() - 0.5) * shakeIntensity);
+        shakeTimer--;
+        shakeIntensity *= 0.9;
     }
 
-    let img = (pacman.direction == 'U') ? pacmanUpImage : (pacman.direction == 'D') ? pacmanDownImage : (pacman.direction == 'L') ? pacmanLeftImage : pacmanRightImage;
-    if (Math.floor(Date.now() / 150) % 2 == 0) context.drawImage(img, pacman.x, pacman.y, pacman.width, pacman.height);
-    else { context.fillStyle = "yellow"; context.beginPath(); context.arc(pacman.x + 50, pacman.y + 50, 45, 0, Math.PI * 2); context.fill(); }
+    for (let w of walls) context.drawImage(w.image, w.x, w.y, w.width, w.height);
     
+    context.fillStyle = "white";
+    for (let f of foods) context.fillRect(f.x, f.y, f.width, f.height);
+    for (let p of powerPellets) { 
+        context.beginPath(); 
+        context.arc(p.x + 20, p.y + 20, 20, 0, Math.PI * 2); 
+        context.fill(); 
+    }
+
+    for (let g of ghosts) {
+        let isScaredState = ghostScared && (ghostScaredTimer > 50 || Math.floor(Date.now() / 100) % 2 === 0);
+        if (isScaredState) {
+            context.save();
+            context.translate(g.x + g.width / 2, g.y + g.height / 2);
+            let angle = (g.direction == 'U') ? Math.PI / 2 : (g.direction == 'R') ? Math.PI : (g.direction == 'D') ? -Math.PI / 2 : 0;
+            context.rotate(angle);
+            context.drawImage(scaredGhostImage, -g.width / 2, -g.height / 2, g.width, g.height);
+            context.restore();
+        } else {
+            context.drawImage(g.image, g.x, g.y, g.width, g.height);
+        }
+    }
+
+    let pacImg = pacmanRightImage;
+    if (pacman.direction == 'U') pacImg = pacmanUpImage;
+    else if (pacman.direction == 'D') pacImg = pacmanDownImage;
+    else if (pacman.direction == 'L') pacImg = pacmanLeftImage;
+
+    if (Math.floor(Date.now() / 150) % 2 == 0 || pacman.direction === null) {
+        context.drawImage(pacImg, pacman.x, pacman.y, pacman.width, pacman.height);
+    } else { 
+        context.fillStyle = "yellow"; 
+        context.beginPath(); 
+        context.arc(pacman.x + 50, pacman.y + 50, 45, 0, Math.PI * 2); 
+        context.fill(); 
+    }
+    
+    context.restore(); // Restore context to original state for UI
+
+    // UI elements (rendered outside the camera/shake effect)
     context.fillStyle = "white"; context.font = "bold 35px sans-serif";
-    context.fillText(`SCORE: ${score}  LIVES: ${lives}  BEST: ${highScore}`, 20, 50);
+    context.textAlign = "left";
+    context.fillText(`SCORE: ${score}  LIVES: ${lives}  LEVEL: ${level}  BEST: ${highScore}`, 20, 50);
+
+    if (levelFlashTimer > 0) {
+        context.fillStyle = "yellow";
+        context.font = "bold 100px sans-serif";
+        context.textAlign = "center";
+        context.fillText(`LEVEL ${level}`, board.width / 2, board.height / 2);
+    }
 
     if (gameOver) {
         context.fillStyle = "rgba(0,0,0,0.9)"; context.fillRect(0, 0, board.width, board.height);
         context.fillStyle = "white"; context.font = "150px sans-serif"; context.textAlign = "center";
         context.fillText("GAME OVER", board.width / 2, board.height / 2 - 100);
         context.fillStyle = "#FFD700"; context.font = "60px sans-serif";
-        context.fillText(`FINAL: ${score} | BEST: ${highScore}`, board.width / 2, board.height / 2 + 50);
+        context.fillText(`FINAL: ${score} | PRESS 'R' TO RESTART`, board.width / 2, board.height / 2 + 50);
     }
 }
 
 function move() {
-    if (pacman.queuedDirection !== pacman.direction && pacman.canMove(pacman.queuedDirection)) {
-        pacman.x = Math.round(pacman.x / tileSize) * tileSize;
-        pacman.y = Math.round(pacman.y / tileSize) * tileSize;
-        pacman.direction = pacman.queuedDirection;
-        pacman.updateVelocity();
+    if (pacman.x % tileSize === 0 && pacman.y % tileSize === 0) {
+        if (pacman.queuedDirection !== null && pacman.queuedDirection !== pacman.direction && pacman.canMove(pacman.queuedDirection)) {
+            pacman.direction = pacman.queuedDirection;
+            pacman.updateVelocity();
+        }
     }
-    pacman.x += pacman.velocityX; pacman.y += pacman.velocityY;
-    if (pacman.x < -50) pacman.x = boardWidth - 50; else if (pacman.x > boardWidth - 50) pacman.x = -50;
-    for (let w of walls) if (collision(pacman, w)) { pacman.x -= pacman.velocityX; pacman.y -= pacman.velocityY; break; }
+
+    pacman.x += pacman.velocityX; 
+    pacman.y += pacman.velocityY;
+
+    if (pacman.x < -50) pacman.x = boardWidth - 50; 
+    else if (pacman.x > boardWidth - 50) pacman.x = -50;
+
+    for (let w of walls) {
+        if (collision(pacman, w)) {
+            pacman.x -= pacman.velocityX;
+            pacman.y -= pacman.velocityY;
+            pacman.velocityX = 0;
+            pacman.velocityY = 0;
+            break;
+        }
+    }
     
     for (let g of ghosts) {
+        if (pacman.direction !== null) {
+            if (g.x % tileSize == 0 && g.y % tileSize == 0) {
+                let best = g.direction, min = Infinity;
+                for (let d of directions) {
+                    if (isOpposite(d, g.direction)) continue;
+                    if (g.canMove(d)) {
+                        let nx = g.x + (d == 'L' ? -tileSize : d == 'R' ? tileSize : 0);
+                        let ny = g.y + (d == 'U' ? -tileSize : d == 'D' ? tileSize : 0);
+                        let dist = Math.hypot(pacman.x - nx, pacman.y - ny);
+                        if (ghostScared) dist = -dist;
+                        let randomness = Math.max(0.05, 0.2 - (level * 0.02));
+                        if (g.image !== redGhostImage && Math.random() < randomness) dist += 500;
+                        if (dist < min) { min = dist; best = d; }
+                    }
+                }
+                g.direction = best; g.updateVelocity();
+            }
+            g.x += g.velocityX; g.y += g.velocityY;
+        }
+
         if (collision(g, pacman)) {
             if (ghostScared) { score += 200; g.reset(); }
-            else { lives--; if (lives <= 0) { gameOver = true; if (score > highScore) localStorage.setItem("pacman-high-score", score); } else resetPositions(); }
+            else { 
+                lives--; 
+                // TRIGGER SHAKE
+                shakeIntensity = 40;
+                shakeTimer = 20;
+
+                if (lives <= 0) { 
+                    gameOver = true; 
+                    if (score > highScore) localStorage.setItem("pacman-high-score", score); 
+                } else { resetPositions(); } 
+            }
         }
         if (g.x < -50) g.x = boardWidth - 50; else if (g.x > boardWidth - 50) g.x = -50;
-        if (g.x % tileSize == 0 && g.y % tileSize == 0) {
-            let best = g.direction, min = Infinity;
-            for (let d of directions) {
-                if (isOpposite(d, g.direction)) continue;
-                if (g.canMove(d)) {
-                    let nx = g.x + (d == 'L' ? -tileSize : d == 'R' ? tileSize : 0);
-                    let ny = g.y + (d == 'U' ? -tileSize : d == 'D' ? tileSize : 0);
-                    let dist = Math.hypot(pacman.x - nx, pacman.y - ny);
-                    if (ghostScared) dist = -dist;
-                    if (g.image !== redGhostImage && Math.random() < 0.2) dist += 500;
-                    if (dist < min) { min = dist; best = d; }
-                }
-            }
-            g.direction = best; g.updateVelocity();
-        }
-        g.x += g.velocityX; g.y += g.velocityY;
     }
+
     for (let f of foods) if (collision(pacman, f)) { score += 10; foods.delete(f); break; }
-    for (let p of powerPellets) if (collision(pacman, p)) { score += 50; powerPellets.delete(p); ghostScared = true; ghostScaredTimer = 200; }
+    for (let p of powerPellets) {
+        if (collision(pacman, p)) { 
+            score += 50; 
+            powerPellets.delete(p); 
+            ghostScared = true; 
+            ghostScaredTimer = Math.max(100, 300 - (level * 20)); 
+        }
+    }
+
     if (ghostScared && --ghostScaredTimer <= 0) ghostScared = false;
-    if (foods.size == 0 && powerPellets.size == 0) { loadMap(); resetPositions(); }
+
+    if (foods.size === 0 && powerPellets.size === 0) { 
+        level++;
+        nextLevel(); 
+    }
 }
 
 function isOpposite(d1, d2) { return (d1 == 'U' && d2 == 'D') || (d1 == 'D' && d2 == 'U') || (d1 == 'L' && d2 == 'R') || (d1 == 'R' && d2 == 'L'); }
-function collision(a, b) { return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y; }
-function resetPositions() { pacman.reset(); for (let g of ghosts) g.reset(); }
-function movePacman(e) {
-    if (gameOver) { lives = 3; score = 0; gameOver = false; loadMap(); resetPositions(); update(); return; }
+
+function collision(a, b) {
+    const padding = 5;
+    return a.x + padding < b.x + b.width && a.x + a.width - padding > b.x && a.y + padding < b.y + b.height && a.y + a.height - padding > b.y;
+}
+
+function resetPositions() { 
+    pacman.reset(); 
+    pacman.velocityX = 0; 
+    pacman.velocityY = 0; 
+    pacman.direction = null; 
+    pacman.queuedDirection = null;
+    for (let g of ghosts) g.reset(); 
+}
+
+function handleInput(e) {
+    if (e.code === "KeyR") {
+        restartGame();
+        return;
+    }
+
+    if (e.code === "KeyE") {
+        foods.clear();
+        powerPellets.clear();
+        return;
+    }
+
     const keys = { "ArrowUp": 'U', "KeyW": 'U', "ArrowDown": 'D', "KeyS": 'D', "ArrowLeft": 'L', "KeyA": 'L', "ArrowRight": 'R', "KeyD": 'R' };
-    if (keys[e.code]) pacman.updateDirection(keys[e.code]);
+    if (keys[e.code]) {
+        if (pacman.direction === null) {
+            pacman.direction = keys[e.code];
+            pacman.queuedDirection = keys[e.code];
+            pacman.updateVelocity();
+        } else {
+            pacman.updateDirection(keys[e.code]);
+        }
+    }
 }
 
 class Block {
-    constructor(image, x, y, w, h) { this.image = image; this.x = x; this.y = y; this.width = w; this.height = h; this.startX = x; this.startY = y; this.direction = 'R'; this.queuedDirection = 'R'; this.velocityX = 0; this.velocityY = 0; }
+    constructor(image, x, y, w, h) { 
+        this.image = image; this.x = x; this.y = y; this.width = w; this.height = h; 
+        this.startX = x; this.startY = y; 
+        this.direction = null; this.queuedDirection = null; 
+        this.velocityX = 0; this.velocityY = 0; 
+    }
     canMove(d) {
-        let s = (this === pacman) ? tileSize / 5 : tileSize / 10;
+        let s = tileSize / 5;
         let nx = this.x, ny = this.y;
         if (d == 'U') ny -= s; else if (d == 'D') ny += s; else if (d == 'L') nx -= s; else if (d == 'R') nx += s;
         let r = { x: nx, y: ny, width: this.width, height: this.height };
@@ -199,9 +363,17 @@ class Block {
     }
     updateDirection(d) { this.queuedDirection = d; }
     updateVelocity() {
-        let s = (this === pacman) ? tileSize / 5 : tileSize / 10;
+        if (this.direction === null) return;
+        let speedMult = 1 + (level - 1) * 0.1; 
+        let s = (this === pacman) ? 10 : 5 * speedMult; 
         this.velocityX = (this.direction == 'L' ? -s : this.direction == 'R' ? s : 0);
         this.velocityY = (this.direction == 'U' ? -s : this.direction == 'D' ? s : 0);
     }
-    reset() { this.x = this.startX; this.y = this.startY; }
+    reset() { 
+        this.x = this.startX; this.y = this.startY; 
+        this.direction = null; 
+        this.queuedDirection = null;
+        this.velocityX = 0;
+        this.velocityY = 0;
+    }
 }

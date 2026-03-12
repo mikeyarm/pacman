@@ -1,25 +1,114 @@
-body {
-    background-color: #101010; /* Darker background */
-    margin: 0;
+/* --- Base Layout --- */
+body { background-color: #050505; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+
+#game-container {
+    position: relative;
     display: flex;
-    justify-content: center; /* Centers horizontally */
-    align-items: center;     /* Centers vertically */
-    height: 100vh;           /* Full height of the browser window */
-    overflow: hidden;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden; 
+    border: 5px solid #1919A6;
+    background: black;
+    aspect-ratio: 19 / 21; 
+    width: 90vmin; 
+    height: auto;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 1), 0 0 20px rgba(25, 25, 166, 0.4);
 }
 
-#board {
-    background-color: black;
-    border: 5px solid #1919A6; /* Classic Pac-Man Blue Border */
-    box-shadow: 0 0 30px rgba(0, 0, 0, 1);
-    
-    /* Responsive sizing */
-    max-width: 95vw;
-    max-height: 90vh;
-    width: auto;
-    height: auto;
+/* --- CRT & Pause Effects --- */
+#game-container::after {
+    content: " ";
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,0.9) 100%);
+    background-size: 100% 4px, 100% 100%;
+    pointer-events: none; 
+    z-index: 30;
+    animation: flicker 0.15s infinite;
+}
 
-    /* Keeps pixel art sharp when stretched */
-    image-rendering: -moz-crisp-edges;
-    image-rendering: pixelated;
+@keyframes flicker { 0% { opacity: 0.97; } 50% { opacity: 1; } 100% { opacity: 0.97; } }
+@keyframes colorCycle { 0% { color: #FFFF00; } 50% { color: #00FFFF; } 100% { color: #FFFF00; } }
+
+#menu, #pause-screen {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: none; /* Changed from flex to none */
+    z-index: 25;
+    /* pointer-events must be auto (or default) to receive clicks */
+    pointer-events: auto; 
+}
+
+#menu h1 { font-size: clamp(60px, 10vw, 150px); margin: 0 0 20px; animation: colorCycle 2s infinite; text-shadow: 4px 4px #FF0000; }
+
+.btn-container { display: flex; flex-direction: column; gap: 30px; width: 70%; }
+
+.btn {
+    background: transparent;
+    color: #FFD700;
+    border: 6px solid #FFD700;
+    padding: 30px;
+    font-size: 48px;
+    font-weight: 900;
+    cursor: pointer;
+    text-transform: uppercase;
+    text-shadow: 3px 3px 6px #000;
+    transition: all 0.2s ease;
+}
+
+.btn:hover { background: #FFD700; color: #000; transform: scale(1.05); box-shadow: 0 0 40px #FFD700; }
+
+#board { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+
+#high-score-screen {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+    color: #FFFF00;
+}
+
+#player-name {
+    background: black;
+    border: 4px solid #FFD700;
+    color: white;
+    font-size: 60px;
+    padding: 20px;
+    text-align: center;
+    width: 300px;
+    margin-bottom: 30px;
+    text-transform: uppercase;
+}
+
+@keyframes shake {
+    0% { transform: translate(1px, 1px) rotate(0deg); }
+    10% { transform: translate(-1px, -2px) rotate(-1deg); }
+    20% { transform: translate(-3px, 0px) rotate(1deg); }
+    30% { transform: translate(3px, 2px) rotate(0deg); }
+    40% { transform: translate(1px, -1px) rotate(1deg); }
+    50% { transform: translate(-1px, 2px) rotate(-1deg); }
+    60% { transform: translate(-3px, 1px) rotate(0deg); }
+    70% { transform: translate(3px, 1px) rotate(-1deg); }
+    80% { transform: translate(-1px, -1px) rotate(1deg); }
+    90% { transform: translate(1px, 2px) rotate(0deg); }
+    100% { transform: translate(1px, -2px) rotate(-1deg); }
+}
+
+.shake-it {
+    animation: shake 0.5s;
+}
+
+#end-screen {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.9); display: flex; flex-direction: column;
+    justify-content: center; align-items: center; color: white; z-index: 20;
 }

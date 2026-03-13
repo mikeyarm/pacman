@@ -32,15 +32,27 @@ body { background-color: #050505; margin: 0; display: flex; justify-content: cen
 @keyframes flicker { 0% { opacity: 0.97; } 50% { opacity: 1; } 100% { opacity: 0.97; } }
 @keyframes colorCycle { 0% { color: #FFFF00; } 50% { color: #00FFFF; } 100% { color: #FFFF00; } }
 
-#menu, #pause-screen {
+/* Ensure the pause menu covers the screen like the main menu */
+#pause-menu {
     position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    display: none; /* Changed from flex to none */
+    top: 0; 
+    left: 0;
+    width: 100%; 
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85); /* Consistent with menu */
+    display: none; 
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
     z-index: 25;
-    /* pointer-events must be auto (or default) to receive clicks */
-    pointer-events: auto; 
+}
+
+/* Style the title inside the pause menu */
+#pause-menu h2 {
+    font-size: 60px;
+    color: #FFFF00;
+    margin-bottom: 30px;
+    text-transform: uppercase;
 }
 
 #menu h1 { font-size: clamp(60px, 10vw, 150px); margin: 0 0 20px; animation: colorCycle 2s infinite; text-shadow: 4px 4px #FF0000; }

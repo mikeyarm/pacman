@@ -10,6 +10,7 @@ let currentDifficulty = "medium";
 let score = 0, powerMode = false, lives = 3;
 let highScorer = localStorage.getItem("pacmanHighScore") || 0;
 let pacman, ghosts = [], pellets = [], powerPellets = [];
+let fruit = null, fruitTimer = 0, totalPellets = 0;
 let currentLevel = 1, maxLevels = 1;
 
 const maze1 = [
@@ -46,11 +47,11 @@ const getLevelLayout = (lvl) => {
 const difficultySettings = {
     easy: { ghostSpeed: 2, pacmanSpeed: 3, intelligence: 0.4 },
     medium: { ghostSpeed: 3, pacmanSpeed: 3, intelligence: 0.7 },
-    hard: { ghostSpeed: 5, pacmanSpeed: 5, intelligence: 1.0 }
+    hard: { ghostSpeed: 3, pacmanSpeed: 5, intelligence: 0.9 }
 };
 
 const walls = [], loadedImages = {};
-const imagesToLoad = ["wall.png", "redGhost.png", "pinkGhost.png", "orangeGhost.png", "blueGhost.png", "cherry.png"];
+const imagesToLoad = ["wall.png", "redGhost.png", "pinkGhost.png", "orangeGhost.png", "blueGhost.png", "cherry.png", "scaredGhost.png"];
 
 function loadAssets(callback) {
     let count = 0;
@@ -101,6 +102,7 @@ function startGame(choice) {
 function loadLevel(lvl, isDeathReset = false) {
     currentLevel = lvl;
     isTransitioning = false;
+    fruit = null;
     const layout = getLevelLayout(lvl);
     const configs = [{ name: "Blinky", img: "redGhost.png" }, { name: "Pinky", img: "pinkGhost.png" }, { name: "Inky", img: "blueGhost.png" }, { name: "Clyde", img: "orangeGhost.png" }];
     if (!isDeathReset) { walls.length = 0; pellets.length = 0; powerPellets.length = 0; }
@@ -121,6 +123,7 @@ function loadLevel(lvl, isDeathReset = false) {
             }
         }
     }
+    if (!isDeathReset) totalPellets = pellets.length;
     if (!requestID) requestID = requestAnimationFrame(update);
     startCountdown();
 }
@@ -140,19 +143,86 @@ function triggerShake() {
     setTimeout(() => board.classList.remove("shake-it"), 500);
 }
 
+function canMove(x, y) {
+    const row = Math.floor(y / tileSize);
+    if (row === 9) { if (x < -tileSize || x > boardWidth) return true; }
+    else { if (x < 0 || x + tileSize > boardWidth || y < 0 || y + tileSize > boardHeight) return false; }
+    for (let w of walls) { if (x < w.x + w.width && x + tileSize > w.x && y < w.y + w.height && y + tileSize > w.y) return false; }
+    return true;
+}
+
+function getVel(dir, speed) {
+    if (dir === "Up") return {x: 0, y: -speed};
+    if (dir === "Down") return {x: 0, y: speed};
+    if (dir === "Left") return {x: -speed, y: 0};
+    if (dir === "Right") return {x: speed, y: 0};
+    return {x: 0, y: 0};
+}
+
 function movePacman() {
     const s = pacman.speed;
-    if (pacman.x < -tileSize/2) pacman.x = boardWidth + tileSize/2;
-    else if (pacman.x > boardWidth + tileSize/2) pacman.x = -tileSize/2;
+    if (pacman.x < -tileSize) pacman.x = boardWidth;
+    else if (pacman.x > boardWidth) pacman.x = -tileSize;
     if (pacman.nextDir !== pacman.dir) {
         let v = getVel(pacman.nextDir, s);
-        if (canMove(pacman.x + v.x, pacman.y + v.y) && pacman.x % s === 0 && pacman.y % s === 0) { 
+        if (canMove(pacman.x + v.x, pacman.y + v.y) && Math.abs(pacman.x % tileSize) < s && Math.abs(pacman.y % tileSize) < s) { 
+            pacman.x = Math.round(pacman.x / tileSize) * tileSize;
+            pacman.y = Math.round(pacman.y / tileSize) * tileSize;
             pacman.dir = pacman.nextDir; pacman.velX = v.x; pacman.velY = v.y; 
         }
     }
     if (canMove(pacman.x + pacman.velX, pacman.y + pacman.velY)) { 
         pacman.x += pacman.velX; pacman.y += pacman.velY; 
     } else { pacman.velX = 0; pacman.velY = 0; }
+}
+
+function moveGhostSmart(g) {
+    const s = powerMode ? 2 : difficultySettings[currentDifficulty].ghostSpeed;
+    if (g.x < -tileSize) g.x = boardWidth;
+    else if (g.x > boardWidth) g.x = -tileSize;
+    let centerX = Math.round(g.x / tileSize) * tileSize;
+    let centerY = Math.round(g.y / tileSize) * tileSize;
+    if (Math.abs(g.x - centerX) < s && Math.abs(g.y - centerY) < s) {
+        g.x = centerX; g.y = centerY;
+        const directions = ["Up", "Down", "Left", "Right"];
+        const opposites = { "Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left" };
+        let validMoves = directions.filter(d => {
+            let v = getVel(d, tileSize);
+            return canMove(g.x + v.x, g.y + v.y);
+        });
+        if (validMoves.length > 1) validMoves = validMoves.filter(d => d !== opposites[g.dir]);
+        if (validMoves.length > 0) {
+            validMoves.sort((a, b) => {
+                let vA = getVel(a, s), vB = getVel(b, s);
+                let targetX = pacman.x, targetY = pacman.y;
+                if (!powerMode) {
+                    if (g.name === "Pinky") {
+                        let pVel = getVel(pacman.dir, tileSize * 4);
+                        targetX += pVel.x; targetY += pVel.y;
+                    } else if (g.name === "Inky") {
+                        targetX += (Math.random() - 0.5) * 120;
+                    } else if (g.name === "Clyde") {
+                        if (Math.hypot(g.x - pacman.x, g.y - pacman.y) < 150) {
+                            targetX = 0; targetY = boardHeight;
+                        }
+                    }
+                }
+                let distA = Math.hypot((g.x + vA.x) - targetX, (g.y + vA.y) - targetY);
+                let distB = Math.hypot((g.x + vB.x) - targetX, (g.y + vB.y) - targetY);
+                return powerMode ? distB - distA : distA - distB;
+            });
+            if (Math.random() < difficultySettings[currentDifficulty].intelligence) g.dir = validMoves[0];
+            else g.dir = validMoves[Math.floor(Math.random() * validMoves.length)];
+        }
+    }
+    let nextVel = getVel(g.dir, s);
+    if (canMove(g.x + nextVel.x, g.y + nextVel.y)) { g.x += nextVel.x; g.y += nextVel.y; }
+    else {
+        for(let d of ["Up", "Down", "Left", "Right"]) {
+            let v = getVel(d, s);
+            if(canMove(g.x + v.x, g.y + v.y)) { g.dir = d; break; }
+        }
+    }
 }
 
 function drawPacman() {
@@ -178,40 +248,6 @@ function drawPacman() {
     context.restore();
 }
 
-function moveGhostSmart(g) {
-    const s = powerMode ? 2 : difficultySettings[currentDifficulty].ghostSpeed;
-    const isAtIntersection = (g.x % tileSize === 0) && (g.y % tileSize === 0);
-    if (isAtIntersection) {
-        const dirs = ["Up", "Down", "Left", "Right"];
-        const opps = { "Up": "Down", "Down": "Up", "Left": "Right", "Right": "Left" };
-        let validMoves = dirs.filter(d => canMove(g.x + getVel(d, s).x, g.y + getVel(d, s).y));
-        if (validMoves.length > 1) validMoves = validMoves.filter(d => d !== opps[g.dir]);
-        if (validMoves.length > 0) {
-            validMoves.sort((a, b) => {
-                let vA = getVel(a, s), vB = getVel(b, s);
-                return Math.hypot((g.x + vA.x) - pacman.x, (g.y + vA.y) - pacman.y) - Math.hypot((g.x + vB.x) - pacman.x, (g.y + vB.y) - pacman.y);
-            });
-            g.dir = (Math.random() > difficultySettings[currentDifficulty].intelligence) ? validMoves[Math.floor(Math.random() * validMoves.length)] : validMoves[0];
-        } else { g.dir = opps[g.dir]; }
-    }
-    let fV = getVel(g.dir, s);
-    if (canMove(g.x + fV.x, g.y + fV.y)) { g.x += fV.x; g.y += fV.y; }
-}
-
-function canMove(x, y) {
-    if (x < 0 || x + tileSize > boardWidth) return true;
-    for (let w of walls) { if (x < w.x + w.width && x + tileSize > w.x && y < w.y + w.height && y + tileSize > w.y) return false; }
-    return true;
-}
-
-function getVel(dir, speed) {
-    if (dir === "Up") return {x: 0, y: -speed};
-    if (dir === "Down") return {x: 0, y: speed};
-    if (dir === "Left") return {x: -speed, y: 0};
-    if (dir === "Right") return {x: speed, y: 0};
-    return {x: 0, y: 0};
-}
-
 function update() {
     if (gameOver) return;
     if (gameStarted && !isPaused && !isTransitioning) { 
@@ -224,9 +260,13 @@ function update() {
     });
     pellets.forEach(p => { context.fillStyle = "white"; context.beginPath(); context.arc(p.x, p.y, p.r, 0, Math.PI * 2); context.fill(); });
     powerPellets.forEach(p => { context.fillStyle = "pink"; context.beginPath(); context.arc(p.x, p.y, p.r, 0, Math.PI * 2); context.fill(); });
+    if (fruit && fruit.active) {
+        if (loadedImages["cherry.png"]) context.drawImage(loadedImages["cherry.png"], fruit.x, fruit.y, tileSize, tileSize);
+        else { context.fillStyle = "red"; context.beginPath(); context.arc(fruit.x + 15, fruit.y + 15, 8, 0, Math.PI * 2); context.fill(); }
+    }
     drawPacman();
     ghosts.forEach(g => {
-        let img = powerMode ? loadedImages["blueGhost.png"] : loadedImages[g.img];
+        let img = powerMode ? loadedImages["scaredGhost.png"] : loadedImages[g.img];
         if (img) context.drawImage(img, g.x, g.y, tileSize, tileSize);
         else { context.fillStyle = powerMode ? "blue" : "red"; context.fillRect(g.x, g.y, tileSize, tileSize); }
     });
@@ -237,7 +277,21 @@ function update() {
 }
 
 function checkCollisions() {
-    pellets = pellets.filter(p => Math.hypot(pacman.x + 15 - p.x, pacman.y + 15 - p.y) > 12 || !(score += 10));
+    pellets = pellets.filter(p => {
+        if (Math.hypot(pacman.x + 15 - p.x, pacman.y + 15 - p.y) < 12) {
+            score += 10;
+            if (!fruit && pellets.length === Math.floor(totalPellets / 2)) {
+                fruit = { x: 9 * tileSize, y: 11 * tileSize, active: true };
+                fruitTimer = 600;
+            }
+            return false;
+        }
+        return true;
+    });
+    if (fruit && fruit.active) {
+        if (Math.hypot(pacman.x - fruit.x, pacman.y - fruit.y) < 20) { score += 500; fruit.active = false; }
+        fruitTimer--; if (fruitTimer <= 0) fruit.active = false;
+    }
     powerPellets = powerPellets.filter(p => { if (Math.hypot(pacman.x + 15 - p.x, pacman.y + 15 - p.y) < 15) { powerMode = true; setTimeout(() => powerMode = false, 7000); return false; } return true; });
     ghosts.forEach(g => { 
         if (Math.hypot(pacman.x - g.x, pacman.y - g.y) < 22) { 
@@ -255,7 +309,7 @@ function endGame(status) {
     if (score > highScorer) { localStorage.setItem("pacmanHighScore", score); highScorer = score; }
     document.getElementById("board").style.display = "none";
     document.getElementById("end-screen").style.display = "flex";
-    document.getElementById("end-message").innerText = status === "WIN" ? "YOU CLEARED THE MAZE!" : "GAME OVER";
+    document.getElementById("end-message").innerText = status === "WIN" ? "YOU BEAT THE LEVEL!" : "GAME OVER";
     document.getElementById("final-score").innerText = `FINAL SCORE: ${score}`;
 }
 
